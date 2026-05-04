@@ -1,0 +1,23 @@
+# Python 虛擬環境
+venv/
+__pycache__/
+*.py[cod]
+
+# Google API 憑證與權限金鑰 (絕對不能上傳)
+credentials.json
+token.json
+token_gmail.json
+
+# Facebook 登入狀態 (絕對不能上傳)
+fb_session.json
+
+# 個人設定檔 (包含 API Key)
+config.yaml
+
+# 爬蟲偵錯檔案
+debug_html/
+.playwright/
+
+# OS 檔案
+.DS_Store
+Thumbs.db

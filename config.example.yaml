@@ -1,0 +1,30 @@
+# Google Drive Configuration
+drive:
+  credentials_file: "credentials.json"
+  token_file: "token.json"
+  folder_ids:
+    email: "Email_Folder_Name_or_ID"
+    facebook: "FB_Folder_Name_or_ID"
+    news: "News_Folder_Name_or_ID"
+
+# AI Configuration (Gemini)
+ai:
+  use_ai: false
+  api_key: "YOUR_GEMINI_API_KEY_HERE"
+
+# Email Configuration
+email:
+  folders:
+    - "INBOX"
+  days_back: 1
+  
+# Facebook Accounts to track
+facebook:
+  days_back: 3
+  pages:
+    - name: "Example Page"
+      url: "https://www.facebook.com/example"
+
+# News Keywords
+news_keywords:
+  - "Python"
