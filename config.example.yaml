@@ -1,30 +1,85 @@
+# ==========================================
+# [Mac User Setup Instructions]
+# 1. Open Terminal and cd to this directory.
+# 2. Recreate venv: python3 -m venv venv
+# 3. Activate venv: source venv/bin/activate
+# 4. Install deps: pip install -r requirements.txt
+# 5. Install Browsers: playwright install chromium
+# 6. Set Permission: chmod +x run_daily.sh
+# 7. Run Task: ./run_daily.sh
+# ==========================================
+
 # Google Drive Configuration
 drive:
   credentials_file: "credentials.json"
   token_file: "token.json"
   folder_ids:
-    email: "Email_Folder_Name_or_ID"
-    facebook: "FB_Folder_Name_or_ID"
-    news: "News_Folder_Name_or_ID"
+    email: "郵件蒐集"
+    facebook: "貼文追蹤"
+    news: "新聞與財經"
+
 
 # AI Configuration (Gemini)
 ai:
   use_ai: false
-  api_key: "YOUR_GEMINI_API_KEY_HERE"
+  api_key: ""
 
 # Email Configuration
 email:
   folders:
-    - "INBOX"
+    - "business"
+    - "inbox"
   days_back: 1
   
 # Facebook Accounts to track
 facebook:
-  days_back: 3
+  days_back: 2
   pages:
-    - name: "Example Page"
-      url: "https://www.facebook.com/example"
+    - name: "萬鈞法人視野 WJ Capital Perspective"
+      url: "https://www.facebook.com/profile.php?id=61578106860333"
+    # - name: "Richard只談基本面-Richard's Research Blog"
+    #   url: "https://www.facebook.com/profile.php?id=100054201473657"
+    # - name: "大叔美股筆記 Uncle Investment Note"
+    #   url: "https://www.facebook.com/Unclestocknotess"
+    # - name: "IEObserve 國際經濟觀察"
+    #   url: "https://www.facebook.com/intleconobserve"
+    # - name: "財經捕手"
+    #   url: "https://www.facebook.com/FinanceCatcher"
+    # - name: "JG說真的 股市快報"
+    #   url: "https://www.facebook.com/jgtruestockMarketInfo"
+    # - name: "邏輯投資"
+    #   url: "https://www.facebook.com/LogicInvestmentTW"
+    # - name: "The Insight"
+    #   url: "https://www.facebook.com/InvestYourLifes"
+    # - name: "美股探路客"
+    #   url: "https://www.facebook.com/raikk6"
+    # - name: "股魚"
+    #   url: "https://www.facebook.com/stocksardine"
+    # - name: "盤整之王 Consolidation Investment"
+    #   url: "https://www.facebook.com/profile.php?id=61567875730267"
+    # - name: "畢德歐夫"
+    #   url: "https://www.facebook.com/bidoffer.com.tw"
+    # - name: "郭明錤｜Ming-Chi Kuo"
+    #   url: "https://www.facebook.com/profile.php?id=61573992511738"
+    # - name: "Hy.Stockhouse"
+    #   url: "https://www.facebook.com/Hy.Stockhouse?locale=zh_TW"
+    # - name: "Facebook Page 100092284956789"
+    #   url: "https://www.facebook.com/profile.php?id=100092284956789&locale=zh_TW"
+    # - name: "Facebook Page 61573395335523"
+    #   url: "https://www.facebook.com/profile.php?id=61573395335523&locale=zh_TW"
+    # - name: "Facebook Page 61552749913483"
+    #   url: "https://www.facebook.com/profile.php?id=61552749913483&locale=zh_TW"
 
 # News Keywords
 news_keywords:
-  - "Python"
+  - "台灣 and 房市"
+  - "台灣央行"
+  - "台灣 and 關稅"
+  - "台灣 and 貿易"
+  - "霍爾木茲海峽"
+  - "加權指數"
+  - "櫃買指數"
+  - "新台幣"
+  - "台灣 and 半導體"
+
+
