@@ -29,47 +29,47 @@ async def main():
     if config.get('ai', {}).get('use_ai'):
         ai_handler = AIHandler(config['ai']['api_key'])
     
-    # # 1. Email Processing
-    # email_config = config.get('email')
-    # if email_config:
-    #     print("Processing Emails...")
-    #     gmail = GmailHandler(config['drive']['credentials_file'], config['drive']['token_file'])
+    # 1. Email Processing
+    email_config = config.get('email')
+    if email_config:
+        print("Processing Emails...")
+        gmail = GmailHandler(config['drive']['credentials_file'], config['drive']['token_file'])
         
-    #     target_folders = email_config.get('folders', ["INBOX"])
-    #     if isinstance(target_folders, str):
-    #         target_folders = [target_folders]
+        target_folders = email_config.get('folders', ["INBOX"])
+        if isinstance(target_folders, str):
+            target_folders = [target_folders]
             
-    #     # 使用解析後的根資料夾 ID
-    #     root_email_folder_id = email_root_id
+        # 使用解析後的根資料夾 ID
+        root_email_folder_id = email_root_id
         
-    #     for label_name in target_folders:
-    #         print(f"  -> Fetching Label: {label_name}")
-    #         subfolder_id = drive.get_or_create_subfolder(root_email_folder_id, label_name)
+        for label_name in target_folders:
+            print(f"  -> Fetching Label: {label_name}")
+            subfolder_id = drive.get_or_create_subfolder(root_email_folder_id, label_name)
             
-    #         emails = gmail.get_emails(folder=label_name, days_back=email_config.get('days_back', 1))
+            emails = gmail.get_emails(folder=label_name, days_back=email_config.get('days_back', 1))
             
-    #         for em in emails:
-    #             safe_subject = clean_filename(em['subject'])
-    #             filename = f"{today}_{safe_subject[:50]}.txt"
+            for em in emails:
+                safe_subject = clean_filename(em['subject'])
+                filename = f"{today}_{safe_subject[:50]}.txt"
                 
-    #             # --- 重複檢查：如果已存在則跳過 ---
-    #             if drive.file_exists(filename, subfolder_id):
-    #                 print(f"    - Skip (Already Exists): {filename}")
-    #                 continue
+                # --- 重複檢查：如果已存在則跳過 ---
+                if drive.file_exists(filename, subfolder_id):
+                    print(f"    - Skip (Already Exists): {filename}")
+                    continue
                 
-    #             final_body = em['body']
-    #             if ai_handler and em['body']:
-    #                 print(f"    -> Using AI to filter: {em['subject']}")
-    #                 final_body = ai_handler.filter_email(em['subject'], em['body'])
+                final_body = em['body']
+                if ai_handler and em['body']:
+                    print(f"    -> Using AI to filter: {em['subject']}")
+                    final_body = ai_handler.filter_email(em['subject'], em['body'])
                 
-    #             content = f"【郵件標題】 {em['subject']}\n"
-    #             content += f"【寄件者】   {em['sender']}\n"
-    #             content += f"【收信時間】 {em['date']}\n"
-    #             content += f"{'='*30}\n\n"
-    #             content += final_body
+                content = f"【郵件標題】 {em['subject']}\n"
+                content += f"【寄件者】   {em['sender']}\n"
+                content += f"【收信時間】 {em['date']}\n"
+                content += f"{'='*30}\n\n"
+                content += final_body
                 
-    #             drive.upload_text(filename, content, subfolder_id)
-    #             print(f"    Uploaded: {filename}")
+                drive.upload_text(filename, content, subfolder_id)
+                print(f"    Uploaded: {filename}")
 
     # 2. Facebook Scraping
     fb_config = config.get('facebook')

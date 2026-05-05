@@ -67,29 +67,33 @@ playwright install chromium
     *   `api_key`: 貼上您申請到的金鑰。
 3.  **效果**：開啟後，系統會自動移除郵件中的安全警語、廣告頁尾，並將通知類郵件（如登入通知、帳單）濃縮成精簡重點，讓雲端硬碟的檔案更易讀。
 
-## 自動化設定 (Mac)
-使用 Mac 內建的 `crontab` 來實現每天自動執行。
-1. 開啟終端機，輸入 `crontab -e`。
-2. 加入以下內容 (假設每天早上 9 點執行)：
-```bash
-0 9 * * * /usr/bin/python3 /path/to/your/business/main.py >> /path/to/your/business/log.txt 2>&1
-```
-*請將 `/path/to/your/business/` 替換為實際的路徑。*
+## 🕒 自動化執行設定 (每天定時執行)
 
-## 注意事項
-- **FB 爬取**: FB 的反爬蟲機制非常嚴格。此系統使用 Playwright 模擬瀏覽器抓取公開貼文。若頻繁執行，建議使用 VPN 或分身帳號。
-- **新聞搜尋**: 使用 Google 搜尋，前 5 則結果會被抓取並提取內文。
+本專案支援 Windows 與 macOS 的自動排程。建議設定在每天早上 09:00 執行。
 
-## GitHub 連結
-本專案建議託管於私有倉庫。您可以執行以下指令初始化：
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-# 之後請手動在 GitHub 建立 Repo 並推送到遠端
-```
+### 1. Windows 系統 (工作排程器)
+- **方法 A (自動設定)**：執行 `python setup_scheduler.py` 即可自動建立任務。
+- **方法 B (手動設定)**：
+  1. 開啟「工作排程器」，建立基本任務。
+  2. 程式或指令碼填入：`cmd.exe`
+  3. 新增引數填入：`/k "C:\路徑\到\專案\run_daily.bat"`
+  4. 「開始於」填入：`C:\路徑\到\專案` (務必填寫，否則會閃退)
+
+### 2. macOS 系統 (Crontab)
+1. 賦予權限：`chmod +x run_daily.sh`
+2. 開啟排程設定：`crontab -e`
+3. 加入以下內容 (每天 09:00 執行)：
+   ```bash
+   0 9 * * * /絕對路徑/到/您的資料夾/run_daily.sh
+   ```
 
 ---
+
+## 🛠️ 常見問題與偵錯 (Troubleshooting)
+- **閃退問題**：若 Windows 排程執行時閃退，請檢查 `run_daily.bat` 的編碼是否為 ANSI，或檢查排程器中的「開始於」路徑是否正確。
+- **FB 抓取失敗**：請檢查 `fb_session.json` 是否過期，若過期請刪除該檔案並重新執行 `main.py` 進行登入。
+- **Google 授權錯誤**：若出現 403 錯誤，請確認您已在 Google Cloud Console 中將您的 Email 加入「測試使用者」。
+
 
 ## 更換帳號與資料夾指南
 

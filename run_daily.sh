@@ -1,17 +1,14 @@
 #!/bin/bash
 
-# 取得目前腳本所在的目錄
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$DIR"
+# 獲取腳本所在的目錄並進入
+cd "$(dirname "$0")"
 
-echo "Starting Daily Research Task on Mac..."
+echo "[System] Starting Automation Pipeline (macOS)..."
 
-# 進入 Mac 的虛擬環境 (Mac 的路徑是 bin 而不是 Scripts)
-if [ -d "./venv" ]; then
-    source ./venv/bin/activate
-    python3 main.py
-else
-    echo "Error: Virtual environment (venv) not found."
-fi
+# 1. 啟用虛擬環境
+source venv/bin/activate
 
-echo "Task Completed."
+# 2. 執行主程式
+python3 main.py
+
+echo "[System] Task Completed."
