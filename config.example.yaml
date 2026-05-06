@@ -27,7 +27,6 @@ ai:
 # Email Configuration
 email:
   folders:
-    - "business"
     - "inbox"
   days_back: 1
   
