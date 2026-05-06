@@ -9,10 +9,10 @@ from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
  
 SESSION_PATH = os.path.join(os.path.dirname(__file__), '..', 'fb_session.json')
-MAX_SCROLLS = 15
+MAX_SCROLLS = 30 # 調高捲動次數，防止漏抓
  
-# --- 調試設定：設定為 True 會把網頁源碼存到 debug_html 資料夾 ---
-DEBUG_SAVE_HTML = True 
+# --- 調試設定 ---
+DEBUG_SAVE_HTML = False 
  
 # ── Session 管理 ────────────────────────────────────────────────────────────
  
@@ -63,14 +63,6 @@ def _clean_comment_text(raw_text: str) -> str:
     content = " ".join(content_parts)
     return f"{name}: {content}" if content else name
  
-def _text_to_datetime(text: str, now: datetime) -> datetime | None:
-    t = text.strip().split("\n")[0].strip()
-    if re.match(r'^(\d+)天$', t): return now - timedelta(days=int(re.search(r'\d+', t).group()))
-    if re.match(r'^\d+(小時|分鐘|秒)$', t): return now
-    if any(k in t for k in ["分鐘前", "小時前", "剛剛", "秒前"]): return now
-    if "昨天" in t: return now - timedelta(days=1)
-    return None
- 
 def _clean_post_url(url: str) -> str:
     try:
         parsed = urllib.parse.urlparse(url)
@@ -81,7 +73,6 @@ def _clean_post_url(url: str) -> str:
  
 def _extract_story_id(href: str) -> str | None:
     if not href: return None
-    # 支援多種 FB 連結 ID 提取
     m = re.search(r'story_fbid=([^&]+)', href)
     if m: return m.group(1)
     m = re.search(r'/(?:posts|permalink|videos)/[^/?#]+/(\d{10,})/?', href)
@@ -93,23 +84,17 @@ def _extract_story_id(href: str) -> str | None:
     return None
  
 async def _get_post_urls_from_feed(feed_page, scroll_idx) -> dict:
-    """純 DOM 掃描模式。"""
     story_urls: dict[str, str] = {}
     
-    # 調試：儲存 Feed HTML
-    if DEBUG_SAVE_HTML:
-        try:
-            full_html = await feed_page.content()
-            debug_dir = os.path.join(os.path.dirname(__file__), '..', 'debug_html')
-            os.makedirs(debug_dir, exist_ok=True)
-            with open(os.path.join(debug_dir, f"feed_scroll_{scroll_idx}.html"), "w", encoding="utf-8") as f:
-                f.write(full_html)
-        except: pass
-
     # 掃描所有的文章區塊
     articles = await feed_page.locator('div[role="article"]').all()
     for article in articles:
-        # 在每個文章區塊內找連結
+        # --- 排除發文框、廣告、與建議內容 ---
+        inner_text = await article.inner_text()
+        noise_keywords = ["在想什麼", "建立貼文", "Create a post", "What's on your mind", "贊助", "Sponsored", "建議為你推薦", "Suggested for you"]
+        if any(kw in inner_text for kw in noise_keywords):
+            continue
+
         links = await article.locator('a').all()
         for link in links:
             try: 
@@ -120,8 +105,6 @@ async def _get_post_urls_from_feed(feed_page, scroll_idx) -> dict:
                     if sid and sid not in story_urls:
                         story_urls[sid] = href
             except: continue
-    
-    # print(f"    [掃描結果] DOM 發現: {len(story_urls)} 篇貼文")
     return story_urls
  
 async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
@@ -132,6 +115,11 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
         clean_url = _clean_post_url(post_url)
         t0 = time.perf_counter()
         await page.goto(clean_url, wait_until="commit", timeout=30000)
+        
+        # 強制視窗置頂並停頓 2 秒
+        await page.bring_to_front()
+        await asyncio.sleep(2)
+
         try: await page.wait_for_load_state("load", timeout=8000)
         except: pass
         timings['載入'] = time.perf_counter() - t0
@@ -155,26 +143,22 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
         for sel in ['[data-ad-comet-preview="message"]', 'div[data-ad-preview="message"]']:
             elems = await page.locator(sel).all()
             if elems:
-                content = "\n\n".join([await safe_text(e) for e in elems])
+                # 只抓取第一個元素，避免抓到頁面下方的「推薦貼文」或「相關內容」
+                content = await safe_text(elems[0])
+                # 過濾開頭雜訊
+                if content.startswith("最幸福的事～"):
+                    content = content[len("最幸福的事～"):].strip()
                 break
         timings['抓內文'] = time.perf_counter() - t0
  
         t0 = time.perf_counter()
         seen = set()
-        for _ in range(5):
-            for btn_text in ["查看更多留言", "View more comments", "所有留言"]:
-                btn = page.locator(f'div[role="button"]:has-text("{btn_text}")').first
-                try: 
-                    if await btn.is_visible(timeout=300): await btn.click(timeout=800)
-                except: pass
-            for ca in await page.locator('div[role="article"]').all():
-                if await ca.locator('[data-ad-preview="message"]').count() > 0: continue
-                raw_t = await safe_text(ca)
-                if raw_t and raw_t not in seen:
-                    seen.add(raw_t)
-                    comments.append(_clean_comment_text(raw_t))
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(0.4)
+        for ca in await page.locator('div[role="article"]').all():
+            if await ca.locator('[data-ad-preview="message"]').count() > 0: continue
+            raw_t = await safe_text(ca)
+            if raw_t and raw_t not in seen:
+                seen.add(raw_t)
+                comments.append(_clean_comment_text(raw_t))
         timings['抓留言'] = time.perf_counter() - t0
     except Exception as e: print(f"    ⚠ 錯誤: {e}")
     finally: await page.close()
@@ -182,11 +166,9 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
     total = time.perf_counter() - t_start
     timing_str = " | ".join(f"{k}:{v:.1f}s" for k, v in timings.items())
     print(f"    ⏱ 耗時 {total:.1f}s ({timing_str})")
-    
     return {"content": content or "(無法取得內文)", "comments": comments, "post_time": post_time}
  
 async def scrape_fb(page_url: str, days_back: int = 3):
-    posts_data = []
     async with async_playwright() as p:
         # 改回 headless=False，讓視窗彈出，這樣抓取較穩定
         browser = await p.chromium.launch(headless=True)
@@ -201,7 +183,8 @@ async def scrape_fb(page_url: str, days_back: int = 3):
             print(f"開始爬取: {page_url} (截止日期: {cutoff.strftime('%Y/%m/%d')})")
             await feed_page.goto(page_url, wait_until="commit", timeout=30000)
             await asyncio.sleep(3)
-            seen_story_ids, total_scrolls = set(), 0
+            seen_story_ids, total_scrolls, fail_count = set(), 0, 0
+            
             while total_scrolls < MAX_SCROLLS:
                 story_urls = await _get_post_urls_from_feed(feed_page, total_scrolls)
                 for sid, url in story_urls.items():
@@ -212,24 +195,30 @@ async def scrape_fb(page_url: str, days_back: int = 3):
                     pt = post_data.get("post_time")
                     pt_str = pt.strftime('%Y/%m/%d') if pt else '時間未知'
                     
-                    # 偵測是否為置頂文章 (通常內容會包含 "置頂" 或 Pinned 字樣)
                     is_pinned = "置頂" in post_data['content'][:50] or "Pinned" in post_data['content'][:50]
                     
                     if pt and pt < cutoff:
                         if is_pinned:
-                            print(f"    - [{pt_str}] 是置頂文章，略過時間檢查繼續掃描...")
-                            posts_data.append(post_data)
+                            # 即使是置頂，如果太舊（例如超過 30 天）就略過，這通常是不相關的舊公告
+                            if pt < (now - timedelta(days=30)):
+                                print(f"    - [{pt_str}] 置頂文章過舊，跳過")
+                                continue
+                            print(f"    - [{pt_str}] 是置頂文章，略過日期檢查")
+                            yield post_data
                             continue
                         else:
-                            print(f"    ✗ [{pt_str}] 超過時間範圍，停止抓取該頁面")
-                            return posts_data
+                            fail_count += 1
+                            print(f"    [!] [{pt_str}] 超過日期範圍 (連續第 {fail_count} 篇)")
+                            if fail_count >= 2: # 依要求改為 2 篇
+                                print(f"    ✗ 連續 2 篇超過範圍，停止本頁爬取")
+                                return 
+                            continue
                     
+                    fail_count = 0 # 抓到正常的，重置計數
                     print(f"    ✓ [{pt_str}] 在時間範圍內，抓取成功")
-                    posts_data.append(post_data)
+                    yield post_data
                 
-                # 提速：縮短滾動後的等待時間
-                await feed_page.evaluate("window.scrollBy(0, 2500)")
-                await asyncio.sleep(0.8)
+                await feed_page.evaluate("window.scrollBy(0, 3000)")
+                await asyncio.sleep(1.2) # 稍微增加等待時間，減少漏抓
                 total_scrolls += 1
         finally: await browser.close()
-    return posts_data

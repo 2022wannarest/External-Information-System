@@ -27,12 +27,12 @@ class DriveHandler:
 
     def resolve_folder_id(self, identifier):
         """根據名稱或 ID 取得資料夾 ID，若不存在則建立。"""
-        # 如果看起來已經是 ID (通常是 25 字元以上的英數組合且沒有空格)
         if len(identifier) > 25 and " " not in identifier:
             return identifier
         
-        # 否則，視為名稱並搜尋/建立
-        query = f"name = '{identifier}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        # 處理名稱中的單引號
+        safe_identifier = identifier.replace("'", "\\'")
+        query = f"name = '{safe_identifier}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         results = self.service.files().list(q=query, fields="files(id)").execute()
         files = results.get('files', [])
         
@@ -49,13 +49,15 @@ class DriveHandler:
 
     def file_exists(self, filename, folder_id):
         """檢查指定資料夾中是否存在同名檔案。"""
-        query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+        safe_filename = filename.replace("'", "\\'")
+        query = f"name = '{safe_filename}' and '{folder_id}' in parents and trashed = false"
         results = self.service.files().list(q=query, fields="files(id)").execute()
         return len(results.get('files', [])) > 0
 
     def delete_file_by_name(self, filename, folder_id):
         """在指定資料夾中搜尋並刪除同名檔案。"""
-        query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+        safe_filename = filename.replace("'", "\\'")
+        query = f"name = '{safe_filename}' and '{folder_id}' in parents and trashed = false"
         results = self.service.files().list(q=query, fields="files(id)").execute()
         files = results.get('files', [])
         for f in files:
@@ -66,7 +68,8 @@ class DriveHandler:
 
     def get_or_create_subfolder(self, parent_id, folder_name):
         """在指定的父資料夾下尋找或建立子資料夾。"""
-        query = f"name = '{folder_name}' and '{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        safe_name = folder_name.replace("'", "\\'")
+        query = f"name = '{safe_name}' and '{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         results = self.service.files().list(q=query, fields="files(id)").execute()
         files = results.get('files', [])
         if files:
@@ -77,15 +80,16 @@ class DriveHandler:
                 'mimeType': 'application/vnd.google-apps.folder',
                 'parents': [parent_id]
             }
-            folder = self.service.files().create(body=file_metadata, fields='id').execute()
-            return folder.get('id')
+            subfolder = self.service.files().create(body=file_metadata, fields='id').execute()
+            return subfolder.get('id')
 
-    def upload_text(self, filename, content, folder_id, mimetype='text/plain'):
+    def upload_text(self, filename, content, folder_id):
+        """將文字內容上傳為 .txt 檔案。"""
         file_metadata = {
             'name': filename,
             'parents': [folder_id]
         }
         fh = io.BytesIO(content.encode('utf-8'))
-        media = MediaIoBaseUpload(fh, mimetype=mimetype)
+        media = MediaIoBaseUpload(fh, mimetype='text/plain', resumable=True)
         file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         return file.get('id')
