@@ -18,7 +18,7 @@ DEBUG_SAVE_HTML = False
  
 async def save_fb_session():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         page = await context.new_page()
         await page.goto("https://www.facebook.com/")
@@ -86,25 +86,41 @@ def _extract_story_id(href: str) -> str | None:
 async def _get_post_urls_from_feed(feed_page, scroll_idx) -> dict:
     story_urls: dict[str, str] = {}
     
-    # 掃描所有的文章區塊
-    articles = await feed_page.locator('div[role="article"]').all()
-    for article in articles:
-        # --- 排除發文框、廣告、與建議內容 ---
-        inner_text = await article.inner_text()
-        noise_keywords = ["在想什麼", "建立貼文", "Create a post", "What's on your mind", "贊助", "Sponsored", "建議為你推薦", "Suggested for you"]
-        if any(kw in inner_text for kw in noise_keywords):
-            continue
+    # 1. 雙重地標偵測：找出「貼文」與「精選」的位置，取最下方的作為起點
+    header_y = await feed_page.evaluate("""
+        () => {
+            let maxY = 0;
+            const targets = ['貼文', 'Posts', '精選', 'Featured'];
+            const elements = Array.from(document.querySelectorAll('span, h2, div'));
+            
+            targets.forEach(t => {
+                const el = elements.find(e => e.innerText.trim() === t);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const bottomY = rect.bottom + window.scrollY;
+                    if (bottomY > maxY) maxY = bottomY;
+                }
+            });
+            return maxY;
+        }
+    """)
 
-        links = await article.locator('a').all()
-        for link in links:
-            try: 
-                href = await link.evaluate("el => el.href") or ""
-                # 篩選出貼文連結
-                if 'facebook.com' in href and any(k in href for k in ['posts', 'permalink', 'videos', 'story_fbid']):
-                    sid = _extract_story_id(href)
-                    if sid and sid not in story_urls:
-                        story_urls[sid] = href
-            except: continue
+    # 2. 掃描連結並進行座標過濾
+    links = await feed_page.locator('a').all()
+    for link in links:
+        try: 
+            if header_y > 0:
+                box = await link.bounding_box()
+                if box and (box['y'] + await feed_page.evaluate("window.scrollY")) < (header_y + 30):
+                    continue
+
+            href = await link.evaluate("el => el.href") or ""
+            if 'facebook.com' in href and any(k in href for k in ['posts', 'permalink', 'videos', 'story_fbid', 'pfbid', 'photo']):
+                if any(noise in href for noise in ['/groups/', '/events/', '/about/']): continue
+                sid = _extract_story_id(href)
+                if sid and sid not in story_urls:
+                    story_urls[sid] = href
+        except: continue
     return story_urls
  
 async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
@@ -125,9 +141,11 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
         timings['載入'] = time.perf_counter() - t0
  
         t0 = time.perf_counter()
-        html_str = await page.content()
-        all_ts = re.findall(r'"creation_time":\s*(\d+)', html_str)
-        if all_ts: post_time = datetime.fromtimestamp(int(all_ts[0]))
+        try:
+            html_str = await page.content()
+            all_ts = re.findall(r'"creation_time":\s*(\d+)', html_str)
+            if all_ts: post_time = datetime.fromtimestamp(int(all_ts[0]))
+        except: pass # 若失敗則保持 None
         timings['解析時間'] = time.perf_counter() - t0
  
         t0 = time.perf_counter()
@@ -140,20 +158,24 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
         timings['展開'] = time.perf_counter() - t0
         
         t0 = time.perf_counter()
+        
+        # --- 核心修正：優先鎖定彈出視窗 (dialog)，避免抓到背景貼文 ---
+        dialog = page.locator('div[role="dialog"]')
+        if await dialog.count() > 0:
+            container = dialog.first
+        else:
+            container = page
+
         for sel in ['[data-ad-comet-preview="message"]', 'div[data-ad-preview="message"]']:
-            elems = await page.locator(sel).all()
+            elems = await container.locator(sel).all()
             if elems:
-                # 只抓取第一個元素，避免抓到頁面下方的「推薦貼文」或「相關內容」
                 content = await safe_text(elems[0])
-                # 過濾開頭雜訊
-                if content.startswith("最幸福的事～"):
-                    content = content[len("最幸福的事～"):].strip()
                 break
-        timings['抓內文'] = time.perf_counter() - t0
+        timings['抓內容'] = time.perf_counter() - t0
  
         t0 = time.perf_counter()
         seen = set()
-        for ca in await page.locator('div[role="article"]').all():
+        for ca in await container.locator('div[role="article"]').all():
             if await ca.locator('[data-ad-preview="message"]').count() > 0: continue
             raw_t = await safe_text(ca)
             if raw_t and raw_t not in seen:
@@ -161,7 +183,9 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
                 comments.append(_clean_comment_text(raw_t))
         timings['抓留言'] = time.perf_counter() - t0
     except Exception as e: print(f"    ⚠ 錯誤: {e}")
-    finally: await page.close()
+    finally:
+        try: await page.close()
+        except: pass
     
     total = time.perf_counter() - t_start
     timing_str = " | ".join(f"{k}:{v:.1f}s" for k, v in timings.items())
@@ -170,7 +194,6 @@ async def _scrape_post_page(context, post_url: str, now: datetime) -> dict:
  
 async def scrape_fb(page_url: str, days_back: int = 3):
     async with async_playwright() as p:
-        # 改回 headless=False，讓視窗彈出，這樣抓取較穩定
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={"width": 1280, "height": 900}, 
@@ -195,30 +218,39 @@ async def scrape_fb(page_url: str, days_back: int = 3):
                     pt = post_data.get("post_time")
                     pt_str = pt.strftime('%Y/%m/%d') if pt else '時間未知'
                     
-                    is_pinned = "置頂" in post_data['content'][:50] or "Pinned" in post_data['content'][:50]
+                    is_pinned = any(kw in post_data['content'][:80] for kw in ["置頂", "Pinned", "精選", "Featured"])
                     
                     if pt and pt < cutoff:
                         if is_pinned:
-                            # 即使是置頂，如果太舊（例如超過 30 天）就略過，這通常是不相關的舊公告
-                            if pt < (now - timedelta(days=30)):
-                                print(f"    - [{pt_str}] 置頂文章過舊，跳過")
-                                continue
-                            print(f"    - [{pt_str}] 是置頂文章，略過日期檢查")
-                            yield post_data
+                            print(f"    - [{pt_str}] 為精選/置頂貼文但已過期，跳過")
                             continue
                         else:
                             fail_count += 1
                             print(f"    [!] [{pt_str}] 超過日期範圍 (連續第 {fail_count} 篇)")
-                            if fail_count >= 2: # 依要求改為 2 篇
-                                print(f"    ✗ 連續 2 篇超過範圍，停止本頁爬取")
+                            if fail_count >= 2: 
+                                print(f"    ✗ 連續 2 篇超過範圍，停止爬取")
                                 return 
                             continue
                     
-                    fail_count = 0 # 抓到正常的，重置計數
+                    fail_count = 0 
                     print(f"    ✓ [{pt_str}] 在時間範圍內，抓取成功")
                     yield post_data
                 
-                await feed_page.evaluate("window.scrollBy(0, 3000)")
-                await asyncio.sleep(1.2) # 稍微增加等待時間，減少漏抓
+                # 降低滑動距離並增加等待時間，提升穩定性
+                await feed_page.evaluate("window.scrollBy(0, 1000)")
+                await asyncio.sleep(2.5) 
                 total_scrolls += 1
+        finally: await browser.close()
+async def scrape_single_post(post_url: str):
+    "提供單一貼文網址，直接抓取內容"
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=False)
+        context = await browser.new_context(
+            storage_state=SESSION_PATH,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        try:
+            print(f"正在抓取單篇貼文: {post_url}")
+            result = await _scrape_post_page(context, post_url, datetime.now())
+            return result
         finally: await browser.close()
